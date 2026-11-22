@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ethio Lottery</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+:root{--bg:#f6f7f4;--card:#fff;--ink:#14231e;--mut:#5d6b65;--line:#dfe5e0;--brand:#0e7c66;--brand2:#0a5c4c;--warn:#b45309;--bad:#b42318;--ok:#067647}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1714;--card:#17221e;--ink:#e8f0ec;--mut:#9bb0a7;--line:#2a3a34;--brand:#33b89d;--brand2:#5fd1b8}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);z-index:5}
+.bar{max-width:1000px;margin:auto;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.logo{font-weight:800;font-size:18px;color:var(--brand);cursor:pointer;margin-right:auto}
+nav a{margin-right:12px;color:var(--ink);text-decoration:none;cursor:pointer;font-weight:500}
+main{max-width:1000px;margin:auto;padding:14px}
+h1{font-size:28px;line-height:1.15;margin:.2em 0}h2{font-size:20px;margin:1.2em 0 .5em}h3{margin:.3em 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+button,.btn{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;color:var(--brand);border:1px solid var(--brand)}button.bad{background:var(--bad)}button:disabled{opacity:.5}
+input,select,textarea{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;margin:3px 0 9px}
+label{font-size:13px;color:var(--mut);font-weight:600}
+.hero{background:var(--brand2);color:#fff;border-radius:14px;padding:26px 18px;margin:6px 0 14px}.hero p{max-width:560px;opacity:.92}
+.hero button{background:#fff;color:var(--brand2)}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;background:var(--line);color:var(--ink)}
+.s-published,.s-confirmed,.s-approved,.s-verified,.s-completed{background:#d1fadf;color:var(--ok)}
+.s-pending,.s-pending_approval,.s-payment_pending,.s-reserved,.s-draw_pending_approval{background:#fef0c7;color:var(--warn)}
+.s-rejected,.s-suspended,.s-cancelled{background:#fee4e2;color:var(--bad)}
+.prog{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin:6px 0}.prog i{display:block;height:100%;background:var(--brand)}
+.nums{display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:6px}
+.n{padding:8px 0;text-align:center;border-radius:8px;border:1px solid var(--line);cursor:pointer;font-weight:600;background:var(--card)}
+.n.confirmed,.n.reserved,.n.payment_pending{background:var(--line);color:var(--mut);cursor:not-allowed;text-decoration:line-through}
+.n.sel{background:var(--brand);color:#fff;border-color:var(--brand)}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.scroll{overflow-x:auto}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.mut{color:var(--mut)}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:9;max-width:90%}
+.warn{background:#fef0c7;color:#7a2e0e;border-radius:10px;padding:10px;margin:8px 0}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.tabs button{background:var(--card);color:var(--ink);border:1px solid var(--line)}.tabs button.on{background:var(--brand);color:#fff}
+</style></head><body>
+<script>
+// ====== CONFIG ======
+const SB_URL='https://vhflsbgqcchgwoajvhbv.supabase.co';
+const SB_KEY='sb_publishable_mdkyRTMcHY8skqfPq3kdbg_sbD3kPAy';
+const sb=supabase.createClient(SB_URL,SB_KEY);
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const etb=n=>'ETB '+Number(n||0).toLocaleString('en',{maximumFractionDigits:2});
+const pad=(n,c)=>String(n).padStart(c?.number_padding||4,'0');
+const badge=s=>`<span class="badge s-${esc(s)}">${esc(String(s).replace(/_/g,' '))}</span>`;
+let me=null,prof=null,org=null,sel=new Set(),tab={};
+function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.append(t);setTimeout(()=>t.remove(),3800)}
+async function rpc(fn,args){const {data,error}=await sb.rpc(fn,args||{});if(error){toast(error.message);throw error}return data}
+async function q(p){const {data,error}=await p;if(error){toast(error.message);return[]}return data||[]}
+async function loadMe(){const {data:{session}}=await sb.auth.getSession();me=session?.user||null;prof=org=null;
+ if(me){prof=(await sb.from('profiles').select('*').eq('id',me.id).single()).data;
+  if(prof?.role==='organizer')org=(await sb.from('organizers').select('*').eq('owner_id',me.id).single()).data}}
+function shell(html){
+ const r=prof?.role;
+ $('#app').innerHTML=`<header><div class="bar"><span class="logo" onclick="go('')">Ethio Lottery</span><nav>
+ <a onclick="go('campaigns')">Campaigns</a><a onclick="go('winners')">Winners</a><a onclick="go('verify')">Verify ticket</a><a onclick="go('how')">How it works</a><a onclick="go('faq')">FAQ</a>
+ ${me?`<a onclick="go('${r==='super_admin'?'admin':r==='organizer'?'organizer':'me'}')"><b>Dashboard</b></a><a onclick="logout()">Log out</a>`:`<a onclick="go('login')">Log in</a><a onclick="go('register')">Join</a>`}</nav></div></header><main>${html}</main>`}
+function go(h){location.hash='#'+h}
+async function logout(){await sb.auth.signOut();await loadMe();go('')}
+window.addEventListener('hashchange',route);
+async function route(){
+ const [p,a]=(location.hash.slice(1)||'').split('/');
+ const R={'':home,campaigns,campaign:()=>campaign(a),winners,verify,how,faq,about,contact,terms,privacy,login,register,registerOrg,me:meDash,organizer:orgDash,admin:adminDash};
+ try{await (R[p]||home)()}catch(e){console.error(e)} window.scrollTo(0,0)}
+// ====== public ======
+function cardHtml(c,s){const done=s?.confirmed||0,t=c.total_tickets,pct=Math.round(done/t*100);
+ return `<div class="card" style="cursor:pointer" onclick="go('campaign/${c.id}')"><h3>${esc(c.title)}</h3>
+ ${c.prize_images?.[0]?`<img src="${esc(c.prize_images[0])}" alt="" style="width:100%;height:140px;object-fit:cover;border-radius:8px">`:''}
+ <p class="mut">${esc(c.prize_name)}</p><div class="row"><b>${etb(c.ticket_price)}</b>${badge(c.status)}</div>
+ <div class="prog"><i style="width:${pct}%"></i></div><small class="mut">${done} confirmed / ${t} total · ${s?.available??t-done} remaining · ${pct}%</small></div>`}
+async function list(limit){const cs=await q(sb.from('campaigns').select('*').order('created_at',{ascending:false}).limit(limit||60));
+ const st=await q(sb.from('campaign_stats').select('*'));const m=Object.fromEntries(st.map(s=>[s.campaign_id,s]));
+ return cs.filter(c=>m[c.id]).map(c=>cardHtml(c,m[c.id])).join('')||'<p class="mut">No approved campaigns are open right now.</p>'}
+async function home(){const b=await sb.from('platform_settings').select('value').eq('key','announcement').single();
+ shell(`<div class="hero"><h1>Fair, transparent number-prize campaigns</h1><p>Pick your numbers, pay by Telebirr, and watch every step: verified organizers, recorded draws and public winner results.</p><button onclick="go('campaigns')">Browse campaigns</button> <button onclick="go('register')">Start as organizer</button></div>
+ ${b.data?.value?`<div class="warn">${esc(b.data.value)}</div>`:''}
+ <h2>Open campaigns</h2><div class="grid">${await list(6)}</div>
+ <h2>Why it is transparent</h2><div class="grid"><div class="card"><b>Verified organizers</b><p class="mut">Every organizer is reviewed by the platform before selling.</p></div><div class="card"><b>Server-side draws</b><p class="mut">Winners are picked on the server from a frozen, hashed ticket list. No animation counts as proof.</p></div><div class="card"><b>Public verification</b><p class="mut">Anyone can check a ticket number without seeing personal details.</p></div></div>`)}
+async function campaigns(){shell(`<h1>Campaigns</h1><div class="grid">${await list()}</div>`)}
+async function campaign(id){
+ const c=(await sb.from('campaigns').select('*').eq('id',id).single()).data;if(!c)return shell('<p>Campaign not found.</p>');
+ const o=(await sb.from('organizers').select('business_name').eq('id',c.organizer_id).single()).data;
+ const s=(await sb.from('campaign_stats').select('*').eq('campaign_id',id).single()).data||{};
+ const board=await q(sb.from('ticket_board').select('number,status').eq('campaign_id',id).order('number').limit(5000));
+ const w=await q(sb.from('public_winners').select('*').eq('campaign_id',id).order('prize_position'));
+ const f=tab.filter||'';const per=200,pg=tab.pg||0;
+ const shown=board.filter(t=>!f||String(t.number).includes(f));
+ const open=c.status==='published';
+ shell(`<div class="card"><h1>${esc(c.title)}</h1>${badge(c.status)}
+ <p><b>${esc(c.prize_name)}</b> — ${esc(c.prize_description||'')}</p>
+ <p>Organizer: <b>${esc(o?.business_name||'—')}</b> (verified) · Price ${etb(c.ticket_price)} · ${c.total_tickets} tickets · ${s.confirmed||0} confirmed · ${s.available??'-'} available</p>
+ <p class="mut">Closing: ${c.planned_end_date?new Date(c.planned_end_date).toLocaleDateString():'not set'} · Prize value: ${c.prize_value?etb(c.prize_value):'—'}</p>
+ <details><summary>Terms & eligibility</summary><p>${esc(c.terms)}</p><p>${esc(c.eligibility||'')}</p></details></div>
+ ${w.length?`<div class="card"><h3>Winners</h3>${w.map(x=>`<p>Prize ${x.prize_position}: ticket <b>${pad(x.ticket_number,c)}</b> (${esc(x.masked_phone)})</p>`).join('')}<small class="mut">Snapshot hash: ${esc(w[0].snapshot_hash)}<br>Draw commitment: ${esc(w[0].random_seed_commitment)}</small></div>`:''}
+ ${open?`<div class="card"><h3>Choose numbers</h3><input id="srch" placeholder="Search a number" value="${esc(f)}" oninput="tab.filter=this.value;tab.pg=0;campaign('${id}')">
+ <div class="nums">${shown.slice(pg*per,pg*per+per).map(t=>`<div class="n ${sel.has(t.number)?'sel':t.status}" onclick="pick(${t.number},'${t.status}','${id}',${c.ticket_price})">${pad(t.number,c)}</div>`).join('')}</div>
+ <div class="row" style="margin-top:8px"><button class="ghost" ${pg?'':'disabled'} onclick="tab.pg=${pg-1};campaign('${id}')">Prev</button><button class="ghost" ${(pg+1)*per<shown.length?'':'disabled'} onclick="tab.pg=${pg+1};campaign('${id}')">Next</button><span class="mut">Page ${pg+1}</span></div>
+ <div class="card"><b>${sel.size} selected</b> · Total <b>${etb(sel.size*c.ticket_price)}</b><br><small class="mut">${[...sel].sort((a,b)=>a-b).map(n=>pad(n,c)).join(', ')}</small><br><br>
+ <button ${sel.size?'':'disabled'} onclick="reserve('${id}')">Reserve (${c.reservation_minutes} min hold)</button></div></div>`:`<div class="warn">Ticket sales are not open for this campaign.</div>`}`)}
+function pick(n,st,id,price){if(st!=='available')return;sel.has(n)?sel.delete(n):sel.add(n);if(sel.size>20){sel.delete(n);toast('Maximum 20 tickets')}campaign(id)}
+async function reserve(id){if(!me){toast('Log in first');return go('login')}
+ if(!confirm('Reserve '+sel.size+' ticket(s)? You must pay before the hold expires.'))return;
+ try{const rid=await rpc('reserve_tickets',{p_campaign:id,p_numbers:[...sel]});sel.clear();go('me');toast('Reserved. Submit your payment below.')}catch(e){campaign(id)}}
+async function winners(){const w=await q(sb.from('public_winners').select('*').order('executed_at',{ascending:false}));
+ shell(`<h1>Published winners</h1>${w.map(x=>`<div class="card"><b>${esc(x.title)}</b> — ${esc(x.prize_name)}<br>Prize ${x.prize_position}: ticket <b>${x.ticket_number}</b> (${esc(x.masked_phone)})<br><small class="mut">${new Date(x.executed_at).toLocaleString()} · snapshot ${esc(x.snapshot_hash)}</small></div>`).join('')||'<p class="mut">No draws completed yet.</p>'}`)}
+async function verify(){const cs=await q(sb.from('campaigns').select('id,title'));
+ shell(`<h1>Verify a ticket</h1><div class="card"><label>Campaign</label><select id="vc">${cs.map(c=>`<option value="${c.id}">${esc(c.title)}</option>`).join('')}</select><label>Ticket number</label><input id="vn" inputmode="numeric"><button onclick="doVerify()">Check</button><div id="vr"></div></div>`)}
+async function doVerify(){const r=await rpc('verify_ticket',{p_campaign:$('#vc').value,p_number:+$('#vn').value});
+ $('#vr').innerHTML=r.error?'<p>Ticket not found.</p>':`<p>Ticket <b>${r.number}</b> in <b>${esc(r.campaign)}</b>: ${badge(r.status)} ${r.winner?'🏆 Winner':''}</p>`}
+const page=(t,b)=>()=>shell(`<h1>${t}</h1><div class="card">${b}</div>`);
+const how=page('How it works','<ol><li>Browse an approved campaign.</li><li>Choose numbers; they are held for 15 minutes.</li><li>Pay by Telebirr to the account shown and enter the transaction reference.</li><li>The organizer verifies the payment and confirms your tickets.</li><li>After sales close, tickets are frozen and the draw is run on the server with a public record.</li></ol>');
+const faq=page('FAQ','<p><b>How is payment verified?</b> Manually by the organizer, or automatically when a matching Telebirr SMS is received (if the platform enabled it).</p><p><b>Can organizers choose winners?</b> No. Only an authorized server-side draw selects winners.</p><p><b>Is everything open?</b> Sales and draws stay disabled until legal authorization is verified.</p>');
+const about=page('About','<p>Ethio Lottery is a technology platform for managing number-prize campaigns. It does not assume any campaign is lawful: organizers must be verified and campaigns approved before anything is public.</p>');
+const contact=page('Contact','<p>Telebirr support account: 0923934630<br>Email: add your support address in platform settings.</p>');
+const terms=page('Terms and conditions','<p>Replace with your counsel-approved terms. Participants must be adults. Campaign-specific terms are shown on each campaign.</p>');
+const privacy=page('Privacy policy','<p>We store your name and phone number to operate your tickets. Phone numbers are never shown publicly (only masked). Payment receipts are private to you, the organizer and administrators.</p>');
+// ====== auth ======
+function login(){shell(`<div class="card" style="max-width:420px;margin:auto"><h2>Log in</h2><label>Email</label><input id="e" type="email"><label>Password</label><input id="p" type="password"><button onclick="doLogin()">Log in</button> <button class="ghost" onclick="go('register')">Create account</button></div>`)}
+async function doLogin(){const {error}=await sb.auth.signInWithPassword({email:$('#e').value,password:$('#p').value});if(error)return toast(error.message);await loadMe();go(prof?.role==='super_admin'?'admin':prof?.role==='organizer'?'organizer':'me')}
+function register(){shell(`<div class="card" style="max-width:420px;margin:auto"><h2>Create account</h2><label>Full name</label><input id="n"><label>Phone (09… or +251…)</label><input id="ph" inputmode="tel"><label>Email</label><input id="e" type="email"><label>Password (8+)</label><input id="p" type="password">
+ <label>I want to</label><select id="as" onchange="document.getElementById('ob').style.display=this.value==='organizer'?'block':'none'"><option value="participant">Buy tickets</option><option value="organizer">Run campaigns (organizer)</option></select><div id="ob" style="display:none"><label>Business name</label><input id="bn"><label>TIN (optional)</label><input id="tin"><label>City</label><input id="city"></div>
+ <button onclick="doReg()">Sign up</button></div>`)}
+async function doReg(){const ph=$('#ph').value;if(!/^(\+?251|0)[79]\d{8}$/.test(ph.replace(/[\s-]/g,'')))return toast('Enter a valid Ethiopian phone number');
+ const {data,error}=await sb.auth.signUp({email:$('#e').value,password:$('#p').value,options:{data:{full_name:$('#n').value,phone:ph}}});if(error)return toast(error.message);
+ if(!data.session)return toast('Check your email to confirm, then log in.');await loadMe();
+ if($('#as').value==='organizer'){await rpc('register_organizer',{p_business_name:$('#bn').value||$('#n').value,p_tin:$('#tin').value||null,p_city:$('#city').value||null,p_phone:ph,p_email:$('#e').value});await loadMe();return go('organizer')}
+ go('me')}
+function registerOrg(){go('register')}
+async function needLogin(role){await loadMe();if(!me){go('login');return false}if(role&&prof.role!==role){toast('Not allowed');go('');return false}return true}
+// ====== participant ======
+async function meDash(){if(!await needLogin())return;
+ const [res,pay,tk,nt]=await Promise.all([q(sb.from('reservations').select('*, campaigns(title,payment_instructions,payment_account)').order('created_at',{ascending:false})),q(sb.from('payments').select('*').order('created_at',{ascending:false})),q(sb.from('tickets').select('number,status,campaign_id,campaigns(title)').eq('status','confirmed')),q(sb.from('notifications').select('*').order('created_at',{ascending:false}).limit(20))]);
+ const active=res.filter(r=>r.status==='active');
+ shell(`<h1>My account</h1><p class="mut">${esc(prof.full_name||'')} · ${esc(prof.phone||'')} ${prof.phone_verified?'':'(phone not verified — SMS provider not connected)'}</p>
+ ${active.map(r=>`<div class="card"><h3>Pay for ${esc(r.campaigns.title)}</h3><p>Tickets: <b>${r.ticket_numbers.join(', ')}</b> · Total <b>${etb(r.total_amount)}</b><br>Hold expires ${new Date(r.expires_at).toLocaleTimeString()}</p>
+ <div class="warn">Send <b>${etb(r.total_amount)}</b> by ${esc(r.campaigns.payment_account?.method||'telebirr')} to <b>${esc(r.campaigns.payment_account?.account)}</b>.<br>${esc(r.campaigns.payment_instructions||'')}</div>
+ <label>Transaction reference</label><input id="tx${r.id}"><label>Your sending phone (optional)</label><input id="sp${r.id}"><label>Receipt screenshot (JPG/PNG/PDF, max 5MB)</label><input id="ev${r.id}" type="file" accept="image/jpeg,image/png,application/pdf">
+ <button onclick="pay('${r.id}')">Submit payment</button> <button class="ghost" onclick="rpc('cancel_reservation',{p_id:'${r.id}'}).then(meDash)">Cancel</button></div>`).join('')}
+ <h2>Confirmed tickets</h2>${tk.map(t=>`<span class="badge s-confirmed">${esc(t.campaigns.title)} #${t.number}</span> `).join('')||'<p class="mut">None yet.</p>'}
+ <h2>Payments</h2><div class="scroll"><table><tr><th>Amount</th><th>Ref</th><th>Status</th><th>Note</th></tr>${pay.map(p=>`<tr><td>${etb(p.amount)}</td><td>${esc(p.transaction_ref)}</td><td>${badge(p.status)}</td><td>${esc(p.rejection_reason||'')}</td></tr>`).join('')}</table></div>
+ <h2>Notifications</h2>${nt.map(n=>`<div class="card"><b>${esc(n.title)}</b><br><span class="mut">${esc(n.body||'')}</span></div>`).join('')||'<p class="mut">Nothing yet.</p>'}`)}
+async function pay(rid){const ref=$('#tx'+rid).value.trim();if(ref.length<6)return toast('Enter the transaction reference');
+ const f=$('#ev'+rid).files[0];let path=null;
+ if(f){if(!['image/jpeg','image/png','application/pdf'].includes(f.type)||f.size>5242880)return toast('Invalid receipt file');
+  path=`${me.id}/${rid}-${Date.now()}`;const {error}=await sb.storage.from('private-docs').upload(path,f,{contentType:f.type});if(error)return toast(error.message)}
+ try{await rpc('submit_payment',{p_reservation:rid,p_txref:ref,p_sender_phone:$('#sp'+rid).value||null,p_evidence_path:path,p_mime:f?.type||null,p_size:f?.size||null});toast('Payment submitted. Waiting for verification.');meDash()}catch(e){}}
+// ====== organizer ======
+async function orgDash(){if(!await needLogin('organizer'))return;const t=tab.o||'campaigns';
+ const tabs=['campaigns','new','payments','reports','documents'];
+ let body='';
+ if(!org||org.verification_status!=='verified')body+=`<div class="warn">Organizer status: <b>${esc(org?.verification_status)}</b>. You can create drafts after the platform verifies you. Upload documents below.</div>`;
+ if(t==='campaigns'){const cs=await q(sb.from('campaigns').select('*').order('created_at',{ascending:false}));const st=(await rpc('organizer_stats'))||{};
+  body+=`<div class="grid"><div class="card"><b>${st.confirmed_tickets||0}</b><br>Confirmed tickets</div><div class="card"><b>${st.pending_tickets||0}</b><br>Pending</div><div class="card"><b>${etb(st.revenue)}</b><br>Revenue</div></div>`+
+  cs.map(c=>`<div class="card"><b>${esc(c.title)}</b> ${badge(c.status)}<br><span class="mut">${c.total_tickets} tickets · ${etb(c.ticket_price)}</span><div class="row" style="margin-top:8px">
+  ${['draft','rejected'].includes(c.status)?`<button onclick="act('submit_campaign',{p_id:'${c.id}'})">Submit for approval</button>`:''}
+  ${c.status==='approved'?`<button onclick="act('publish_campaign',{p_id:'${c.id}'})">Publish</button>`:''}
+  ${c.status==='published'?`<button class="bad" onclick="confirm('Close sales?')&&act('close_sales',{p_id:'${c.id}'})">Close sales</button>`:''}
+  ${c.status==='sales_closed'?`<button onclick="act('create_draw_snapshot',{p_id:'${c.id}'})">Freeze tickets & request draw</button>`:''}
+  <button class="ghost" onclick="exportCsv('${c.id}')">Export CSV</button></div></div>`).join('')||'<p class="mut">No campaigns yet.</p>'}
+ if(t==='new')body+=`<div class="card"><h3>New campaign</h3><label>Title</label><input id="c_t"><label>Prize name</label><input id="c_p"><label>Prize description</label><textarea id="c_d"></textarea><label>Prize image URL (optional)</label><input id="c_i"><label>Estimated prize value (ETB)</label><input id="c_v" type="number"><label>Ticket price (ETB)</label><input id="c_pr" type="number"><label>First number</label><input id="c_s" type="number" value="1"><label>Last number</label><input id="c_e" type="number" value="2000"><label>Planned end date</label><input id="c_end" type="date"><label>Payment instructions</label><textarea id="c_pi">Send by Telebirr to 0923934630 and keep the transaction reference.</textarea><label>Payment account (Telebirr)</label><input id="c_acc" value="0923934630"><label>Number of prize positions</label><input id="c_pos" type="number" value="1"><label>Terms</label><textarea id="c_tm"></textarea><label>Eligibility</label><textarea id="c_el"></textarea><label>Authorization details</label><textarea id="c_au"></textarea><button onclick="newCampaign()">Save draft</button></div>`;
+ if(t==='payments'){const ps=await q(sb.from('payments').select('*, campaigns(title), reservations(ticket_numbers)').order('created_at',{ascending:false}));
+  body+=ps.map(p=>`<div class="card"><b>${etb(p.amount)}</b> · ${esc(p.campaigns?.title)} ${badge(p.status)}<br>Ref: <b>${esc(p.transaction_ref)}</b> · Tickets: ${p.reservations?.ticket_numbers?.join(', ')} · via ${esc(p.verification_source||'—')}<div class="row" style="margin-top:6px"><button class="ghost" onclick="receipt('${p.id}')">View receipt</button>${p.status==='pending'?`<button onclick="act('review_payment',{p_id:'${p.id}',p_approve:true})">Approve</button><button class="bad" onclick="rej('${p.id}')">Reject</button>`:''}</div></div>`).join('')||'<p class="mut">No payments.</p>'}
+ if(t==='reports'){const ts=await q(sb.from('tickets').select('number,status,participant_id,campaigns(title)').in('status',['confirmed','payment_pending']).limit(2000));
+  body+=`<p class="mut">${ts.length} sold or pending tickets across your campaigns.</p><button onclick="exportCsv()">Export all (CSV)</button>`}
+ if(t==='documents'){const d=await q(sb.from('compliance_documents').select('*').order('created_at',{ascending:false}));
+  body+=`<div class="card"><h3>Upload verification / legal authorization</h3><label>Type</label><select id="d_t"><option>Business license</option><option>Lottery authorization</option><option>National ID</option><option>TIN certificate</option></select><label>Issuing authority</label><input id="d_a"><label>Reference number</label><input id="d_r"><label>Valid until</label><input id="d_u" type="date"><label>File</label><input id="d_f" type="file" accept="image/jpeg,image/png,application/pdf"><button onclick="uploadDoc()">Upload</button></div>`+d.map(x=>`<div class="card">${esc(x.doc_type)} ${badge(x.status)}</div>`).join('')}
+ shell(`<h1>${esc(org?.business_name||'Organizer')}</h1><div class="tabs">${tabs.map(x=>`<button class="${x===t?'on':''}" onclick="tab.o='${x}';orgDash()">${x}</button>`).join('')}</div>${body}`)}
+async function act(fn,a){try{await rpc(fn,a);toast('Done');route()}catch(e){}}
+function rej(id){const r=prompt('Reason for rejection (shown to participant):');if(r)act('review_payment',{p_id:id,p_approve:false,p_reason:r})}
+async function receipt(pid){const e=(await sb.from('payment_evidence').select('storage_path').eq('payment_id',pid).limit(1)).data?.[0];if(!e)return toast('No receipt uploaded');
+ const {data,error}=await sb.storage.from('private-docs').createSignedUrl(e.storage_path,120);if(error)return toast(error.message);window.open(data.signedUrl,'_blank')}
+async function newCampaign(){const n=(+$('#c_pos').value)||1;const g=id=>$('#'+id).value;
+ if(!g('c_t')||!g('c_p')||!(+g('c_pr')>0))return toast('Title, prize and price are required');
+ const row={organizer_id:org.id,title:g('c_t'),prize_name:g('c_p'),prize_description:g('c_d'),prize_images:g('c_i')?[g('c_i')]:[],prize_value:+g('c_v')||null,ticket_price:+g('c_pr'),start_number:+g('c_s'),end_number:+g('c_e'),planned_end_date:g('c_end')||null,payment_instructions:g('c_pi'),payment_account:{method:'telebirr',account:g('c_acc')},prize_distribution:Array.from({length:n},(_,i)=>({position:i+1})),terms:g('c_tm'),eligibility:g('c_el'),authorization_details:g('c_au')};
+ const {error}=await sb.from('campaigns').insert(row);if(error)return toast(error.message);toast('Draft saved');tab.o='campaigns';orgDash()}
+async function uploadDoc(){const f=$('#d_f').files[0];if(!f||!['image/jpeg','image/png','application/pdf'].includes(f.type)||f.size>5242880)return toast('Choose a JPG/PNG/PDF under 5MB');
+ const path=`${me.id}/doc-${Date.now()}`;const u=await sb.storage.from('private-docs').upload(path,f,{contentType:f.type});if(u.error)return toast(u.error.message);
+ const {error}=await sb.from('compliance_documents').insert({organizer_id:org.id,doc_type:$('#d_t').value,authority:$('#d_a').value,reference_number:$('#d_r').value,valid_until:$('#d_u').value||null,storage_path:path});
+ if(error)return toast(error.message);toast('Uploaded');orgDash()}
+async function exportCsv(cid){let qy=sb.from('payments').select('created_at,amount,transaction_ref,status,verification_source,campaigns(title)').order('created_at');
+ const d=await q(qy);const csv='date,campaign,amount,reference,status,source\n'+d.map(p=>[p.created_at,p.campaigns?.title,p.amount,p.transaction_ref,p.status,p.verification_source].map(v=>'"'+String(v??'').replace(/"/g,'""').replace(/^[=+\-@]/,"'$&")+'"').join(',')).join('\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='payments.csv';a.click()}
+// ====== admin ======
+async function adminDash(){if(!await needLogin('super_admin'))return;const t=tab.a||'overview';
+ const tabs=['overview','organizers','campaigns','payments','draws','compliance','settings','audit'];let b='';
+ if(t==='overview'){const s=await rpc('admin_stats');b=`<div class="grid">${Object.entries(s).map(([k,v])=>`<div class="card"><b>${k.includes('total')?etb(v):v}</b><br><span class="mut">${k.replace(/_/g,' ')}</span></div>`).join('')}</div>`}
+ if(t==='organizers'){const o=await q(sb.from('organizers').select('*').order('created_at',{ascending:false}));b=o.map(x=>`<div class="card"><b>${esc(x.business_name)}</b> ${badge(x.verification_status)}<br><span class="mut">TIN ${esc(x.tin_number||'—')} · ${esc(x.city||'')}</span><div class="row" style="margin-top:6px"><button onclick="act('admin_set_organizer_status',{p_org:'${x.id}',p_status:'verified'})">Verify</button><button class="bad" onclick="act('admin_set_organizer_status',{p_org:'${x.id}',p_status:'suspended',p_reason:prompt('Reason')||null})">Suspend</button><button class="ghost" onclick="act('admin_set_organizer_status',{p_org:'${x.id}',p_status:'rejected',p_reason:prompt('Reason')||null})">Reject</button></div></div>`).join('')}
+ if(t==='campaigns'){const c=await q(sb.from('campaigns').select('*, organizers(business_name)').order('created_at',{ascending:false}));b=c.map(x=>`<div class="card"><b>${esc(x.title)}</b> ${badge(x.status)}<br><span class="mut">${esc(x.organizers?.business_name)} · ${x.total_tickets} tickets · ${etb(x.ticket_price)}</span><div class="row" style="margin-top:6px">
+  ${x.status==='pending_approval'?`<button onclick="act('admin_review_campaign',{p_id:'${x.id}',p_decision:'approved'})">Approve</button><button class="bad" onclick="act('admin_review_campaign',{p_id:'${x.id}',p_decision:'rejected',p_reason:prompt('Reason')||''})">Reject</button>`:''}
+  ${['published','approved','sales_closed'].includes(x.status)?`<button class="bad" onclick="act('admin_suspend_campaign',{p_id:'${x.id}',p_suspend:true})">Suspend</button>`:''}${x.status==='suspended'?`<button onclick="act('admin_suspend_campaign',{p_id:'${x.id}',p_suspend:false})">Reactivate</button>`:''}
+  <button class="ghost" onclick="history_('${x.id}')">History</button></div></div>`).join('')}
+ if(t==='payments'){const p=await q(sb.from('payments').select('*, campaigns(title)').order('created_at',{ascending:false}).limit(100));const sm=await q(sb.from('sms_inbox').select('*').order('received_at',{ascending:false}).limit(20));
+  b=`<div class="scroll"><table><tr><th>Date</th><th>Campaign</th><th>Amount</th><th>Ref</th><th>Status</th><th></th></tr>${p.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString()}</td><td>${esc(x.campaigns?.title)}</td><td>${etb(x.amount)}</td><td>${esc(x.transaction_ref)}</td><td>${badge(x.status)}</td><td>${x.status==='pending'?`<button onclick="act('review_payment',{p_id:'${x.id}',p_approve:true})">Approve</button>`:''}</td></tr>`).join('')}</table></div><h2>Incoming Telebirr SMS</h2>${sm.map(s=>`<div class="card">${esc(s.parsed_ref)} · ${etb(s.parsed_amount)} ${badge(s.match_status)}</div>`).join('')||'<p class="mut">None received.</p>'}`}
+ if(t==='draws'){const c=await q(sb.from('campaigns').select('id,title,status').in('status',['draw_pending_approval','draw_authorized']));b=c.map(x=>`<div class="card"><b>${esc(x.title)}</b> ${badge(x.status)}<div class="row" style="margin-top:6px">${x.status==='draw_pending_approval'?`<button onclick="act('authorize_draw',{p_id:'${x.id}'})">Authorize draw</button>`:`<button onclick="confirm('Run the draw now? This cannot be undone.')&&act('execute_draw',{p_id:'${x.id}'})">Execute draw</button>`}</div></div>`).join('')||'<p class="mut">No draws waiting.</p>'}
+ if(t==='compliance'){const d=await q(sb.from('compliance_documents').select('*, organizers(business_name)').order('created_at',{ascending:false}));b=d.map(x=>`<div class="card"><b>${esc(x.organizers?.business_name)}</b> — ${esc(x.doc_type)} ${badge(x.status)}<br><span class="mut">${esc(x.authority||'')} ${esc(x.reference_number||'')}</span><div class="row" style="margin-top:6px"><button class="ghost" onclick="viewDoc('${esc(x.storage_path)}')">Open</button><button onclick="act('admin_verify_compliance',{p_doc:'${x.id}',p_status:'verified'})">Verify</button><button class="bad" onclick="act('admin_verify_compliance',{p_doc:'${x.id}',p_status:'rejected'})">Reject</button></div></div>`).join('')}
+ if(t==='settings'){const s=await q(sb.from('platform_settings').select('*').neq('key','sms_webhook_secret').order('key'));b=`<div class="warn">Feature switches below control legal gating. Keep them off until authorization is verified.</div>`+s.map(x=>`<div class="card"><b>${esc(x.key)}</b><br><span class="mut">${esc(x.description||'')}</span><input id="st_${esc(x.key)}" value='${esc(JSON.stringify(x.value))}'><button onclick="setSetting('${esc(x.key)}')">Save</button></div>`).join('')}
+ if(t==='audit'){const a=await q(sb.from('audit_logs').select('*').order('created_at',{ascending:false}).limit(150));b=`<div class="scroll"><table><tr><th>Time</th><th>Action</th><th>Entity</th><th>Role</th></tr>${a.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString()}</td><td>${esc(x.action)}</td><td>${esc(x.entity)} ${esc(String(x.entity_id||'').slice(0,8))}</td><td>${esc(x.actor_role||'system')}</td></tr>`).join('')}</table></div>`}
+ shell(`<h1>Administration</h1><div class="tabs">${tabs.map(x=>`<button class="${x===t?'on':''}" onclick="tab.a='${x}';adminDash()">${x}</button>`).join('')}</div>${b}`)}
+async function setSetting(k){let v;try{v=JSON.parse($('#st_'+k).value)}catch{return toast('Value must be valid JSON (true, false, "text", numbers)')}act('admin_set_setting',{p_key:k,p_value:v})}
+async function viewDoc(p){const {data,error}=await sb.storage.from('private-docs').createSignedUrl(p,120);if(error)return toast(error.message);window.open(data.signedUrl,'_blank')}
+async function history_(id){const a=await q(sb.from('audit_logs').select('*').eq('entity_id',id).order('created_at'));alert(a.map(x=>new Date(x.created_at).toLocaleString()+'  '+x.action).join('\n')||'No history')}
+sb.auth.onAuthStateChange(()=>{});
+(async()=>{document.body.insertAdjacentHTML('afterbegin','<div id="app"></div>');await loadMe();route()})();
+</script></body></html>
